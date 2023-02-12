@@ -1,0 +1,19 @@
+apiVersion: dapr.io/v1alpha1
+kind: Component
+metadata:
+  name: producer
+spec:
+  type: pubsub.solace.amqp
+  version: v1
+  metadata:
+    - name: host
+      value: "amqp://localhost:5672"
+    - name: clientUsername
+      value: "default"
+    - name: clientPassword
+      value: "default"
+    - name: msgVpn
+      value: "default"
+    - name : topic
+      value: "test" 
+    
