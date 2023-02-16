@@ -1,0 +1,6 @@
+com/service/model/DaprSubscription.class
+com/service/model/SubscriptionData.class
+com/service/model/DaprSubscription$DaprSubscriptionBuilder.class
+com/service/DaprConsumerApplication.class
+com/service/model/Order.class
+com/service/controller/DaprConsumerController.class
