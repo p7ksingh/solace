@@ -1,0 +1,306 @@
+Solace PubSub+ and Spring Boot: Running News Producer and Consumer Apps in Minikube (Kubernetes)
+Step-by-step guide on deploying News Producer and Consumer Apps in Minikube (Kubernetes)
+Ivan Franchin
+ITNEXT
+Ivan Franchin
+
+·
+Following
+
+Published in
+ITNEXT
+
+·
+7 min read
+·
+Jan 12, 2024
+70
+
+
+
+
+
+
+
+Photo by Jonas Smith on Unsplash
+In this article, we will demonstrate how to locally set up Minikube (Kubernetes) on our machines and deploy, within it, instances of two Spring Boot applications, News Producer and News Consumer. Additionally, we’ll show you how to deploy Solace PubSub+ in Minikube, which both News Producer and Consumer depends on.
+
+You can find the complete code and implementation in the article linked below. Feel free to follow the steps explained in the article and get started.
+
+Solace PubSub+ and Spring Boot: Implementing News Producer and Consumer Apps
+Step-by-step guide on building News Producer and Consumer Apps using Solace PubSub+ and Spring Boot
+itnext.io
+
+So, let’s get started!
+
+Prerequisites
+To follow along with this guide, beside Java 17+ and Docker, please ensure that you have the Minikube, Kubectl and VirtualBox installed on your machine.
+
+Updating News Producer and Consumer Apps
+When we use Kubernetes to control our apps, it takes care of keeping the pods healthy. For example, it makes sure our apps only start handling requests when they’re ready. If a pod’s main process stops working, Kubernetes restarts the container.
+
+To do this job, Kubernetes uses two probes: readiness and liveness. The readiness probe checks if an app is ready to get requests. The liveness probe checks if a pod is still going. This helps decide when to restart a container.
+
+Now, let’s add the Actuator tool and enable the liveness and readiness probes.
+
+Add the Actuator Dependency
+In the pom.xml file of both News Producer and News Consumer, let’s include the Actuator dependency by adding the following code (highlighted in bold):
+
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" ...>
+    ...
+    <dependencies>
+        ...
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        ...
+    </dependencies>
+    ...
+</project>
+It was added because it provides built-in endpoints for checking the application’s health, including specific ones for liveness and readiness probes.
+
+Enable the Liveness and Readiness Probes
+In the application.yml of both News Producer and Consumer, let’s enable the liveness and readiness probes by adding the following code (highlighted in bold):
+
+...
+spring:
+  application:
+    ...
+  cloud:
+    stream:
+      ...
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+Creating YAML Deployment files
+Create k8s folder
+Inside the news-app root folder, let’s create a folder called k8s.
+
+Create News Producer YAML Deployment file
+Inside the k8s folder, let’s create a file named news-producer.yaml and include the following content:
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: news-producer
+  labels:
+    app: news-producer
+spec:
+  type: LoadBalancer
+  ports:
+    - name: http
+      port: 9080
+      targetPort: 9080
+  selector:
+    app: news-producer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: news-producer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: news-producer
+  template:
+    metadata:
+      labels:
+        app: news-producer
+    spec:
+      containers:
+        - name: news-producer
+          image: news-producer:0.0.1-SNAPSHOT
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 9080
+          env:
+            - name: SOLACE_HOST
+              value: solace-pubsubplus
+            - name: SOLACE_PORT
+              value: "55555"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+This YAML file sets up a News Producer service and deployment. The service is a LoadBalancer, exposing the port 8080 for external access. The deployment creates a single pod with the news-producer:0.0.1-SNAPSHOT image and configuration, connecting to a Solace PubSub+ message broker. The configuration includes liveness and readiness probes.
+
+Create News Consumer YAML Deployment file
+Inside the k8s folder, let’s create a file named news-consumer.yaml and include the content below:
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: news-consumer
+  labels:
+    app: news-consumer
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9081
+  selector:
+    app: news-consumer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: news-consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: news-consumer
+  template:
+    metadata:
+      labels:
+        app: news-consumer
+    spec:
+      containers:
+        - name: news-consumer
+          image: news-consumer:0.0.1-SNAPSHOT
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 9081
+              protocol: TCP
+          env:
+            - name: SOLACE_HOST
+              value: solace-pubsubplus
+            - name: SOLACE_PORT
+              value: "55555"
+            - name: NEWS_SUBSCRIPTION
+              value: "news/*/DE"
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+This YAML file sets up a News Consumer service and deployment. The service makes the application accessible within the cluster via ClusterIP. The deployment creates one pod with the news-consumer:0.0.1-SNAPSHOT image and configuration, connecting to a Solace PubSub+ message broker. It’s subscribing to all news from Germany. The configuration includes liveness and readiness probes.
+
+Adding SolaceCharts Helm Repo
+In order to run Solace PubSub+, we will use the solacecharts/pubsubplus Helm Chart. So, in a terminal, let’s add the solacecharts repo by running the following command:
+
+helm repo add solacecharts https://solaceproducts.github.io/pubsubplus-kubernetes-helm-quickstart/helm-charts
+To delete the solacecharts repo, run: helm repo remove solacecharts
+
+In order to check the repo list, run:
+
+helm repo list
+Finally, run the command below to get the latest information about charts from the chart repositories:
+
+helm repo update
+Start Environment
+In a terminal, make sure you are in the news-app root folder.
+
+Start Minikube
+Run the following command to start Minikube:
+
+minikube start --memory=8192 --cpus=3 --vm-driver=virtualbox
+Create dev namespace
+Once Minikube is up and running, let’s create a namespace called dev. For it, run the command below:
+
+kubectl create namespace dev
+To delete the dev namespace, run: kubectl delete namespace dev
+
+Deploy Solace PubSub+
+Let’s deploy Solace PubSub+. For it, make sure you are in news-app root folder. The, run the following command:
+
+helm -n dev install solace \
+  --set storage.persistent=false \
+  --set solace.usernameAdminPassword=admin \
+  solacecharts/pubsubplus
+To delete the Solace PubSub+ installation, run: helm uninstall -n dev solace
+
+Watch Solace PubSub+ Deployment
+We can watch the deployment by running the following command:
+
+kubectl -n dev get pods -w
+To stop watching, press: Ctrl+C
+
+Please be patient as Solace PubSub+ Docker image will be pulled before we can proceed further. After a few seconds, the Solace PubSub+ instance should be up and running. To confirm this, you can use the following command:
+
+kubectl -n dev get pods
+You should see something like:
+
+NAME                  READY   STATUS    RESTARTS   AGE
+solace-pubsubplus-0   1/1     Running   0          9m37s
+Building News App Docker images
+In a terminal, let’s execute the following command to sets up our local Docker environment to use Minikube’s Docker daemon:
+
+eval $(minikube docker-env)
+Navigate to the news-procucer folder. Run the command below to build the News Producer Docker image:
+
+./mvnw clean spring-boot:build-image -DskipTests
+Let’s build the News Consumer Docker image. For it, navigate to news-consumer folder. Once there, run the following command:
+
+./mvnw clean spring-boot:build-image -DskipTests
+After the completion of the commands above, the News Producer and Consumer Docker images will be available within Minikube. You can verify this by executing the following command:
+
+docker images
+Let’s switch back to our local host Docker daemon by running the command below:
+
+eval $(minikube docker-env -u)
+Deploying News Apps
+In a terminal, ensure that you are in the news-app root folder. Then, execute the following command to deploy the News Producer:
+
+kubectl -n dev apply -f k8s/news-producer.yaml
+To delete the news-producer deployment, run: kubectl -n dev delete -f k8s/news-producer.yaml
+
+Now, let’s deploy the News Consumer by running the command below:
+
+kubectl -n dev apply -f k8s/news-consumer.yaml
+To delete the news-consumer deployment, run: kubectl -n dev delete -f k8s/news-consumer.yaml
+
+After a few seconds, the single News Producer instance and three News Consumer instances should be up and running. To confirm this, you can use the following command:
+
+kubectl -n dev get pods
+You should see something like:
+
+NAME                             READY   STATUS    RESTARTS   AGE
+news-consumer-b77f7bc5d-9xz5h    1/1     Running   0          7m39s
+news-producer-79b68d886c-zkcc2   1/1     Running   0          7m41s
+solace-pubsubplus-0              1/1     Running   0          23m
+Sending News
+In a terminal, let’s start monitoring the News Consumer instance logs:
+
+kubectl -n dev logs -l app=news-consumer -f
+In another terminal, run the following command to get the NEWS_PRODUCER_HOST_PORT:
+
+NEWS_PRODUCER_HOST_PORT="$(minikube ip):$(kubectl get services -n dev news-producer -o go-template='{{(index .spec.ports 0).nodePort}}')"
+echo $NEWS_PRODUCER_HOST_PORT
+In the same terminal where NEWS_PRODUCER_HOST_PORT was obtained, let’s send one SPORTS news from Germany by executing the command below:
+
+curl -i -X POST $NEWS_PRODUCER_HOST_PORT/api/news \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"SPORTS", "countryCode":"DE", "title":"..."}'
+The News Consumer instance should listen to the message sent and log it. Here is what was logged during my execution:
+
+INFO 1 --- [producer-service] [or-http-epoll-2] c.e.n.publisher.NewsPublisher            : Sent 'News[id=80490ee0-55ec-4739-aa5b-3664c49ab7bc, type=SPORTS, countryCode=DE, title=...]' to topic 'news/SPORTS/DE'
+Let’s send another SPORTS news, but now from Portugal. Here is the command:
+
+curl -i -X POST $NEWS_PRODUCER_HOST_PORT/api/news \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"SPORTS", "countryCode":"PT", "title":"..."}'
+This time, the News Consumer instance should not listen to the message.
+
+Shutdown
+In a terminal, run the following command to delete completely Minikube:
+
+minikube delete
+Conclusion
+In this article, we have walked through the steps of configuring Minikube for local Kubernetes development. Before deploying the News Apps, we added the Actuator dependency and enabled their liveness and readiness probes.
+
+In Minikube, we have deployed Solace PubSub+ and one instance of News Producer and News Consumer. The consumer specifically subscribed to all news originating from Germany. By publishing news types from different countries, we validated that our consumer precisely received the news to which it subscribed.
+
